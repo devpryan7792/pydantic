@@ -383,3 +383,29 @@ def test_decimal_multiple_of_invalid_constraint(multiple_of: Decimal) -> None:
 
     with pytest.raises(SchemaError, match="'multiple_of' must be a finite number greater than 0"):
         TypeAdapter(Annotated[Decimal, Field(multiple_of=multiple_of)])
+
+
+def test_decimal_whole_digits_with_validator() -> None:
+    """https://github.com/pydantic/pydantic/issues/13965"""
+    from pydantic import AfterValidator
+
+    plain = TypeAdapter(Annotated[Decimal, Field(max_digits=3, decimal_places=2)])
+    after = TypeAdapter(Annotated[Decimal, AfterValidator(lambda v: v), Field(max_digits=3, decimal_places=2)])
+
+    with pytest.raises(ValidationError) as exc_plain:
+        plain.validate_python('12.3')
+    assert exc_plain.value.errors()[0]['type'] == 'decimal_whole_digits'
+    assert exc_plain.value.errors()[0]['ctx'] == {'whole_digits': 1}
+
+    with pytest.raises(ValidationError) as exc_after:
+        after.validate_python('12.3')
+    assert exc_after.value.errors()[0]['type'] == 'decimal_whole_digits'
+    assert exc_after.value.errors()[0]['ctx'] == {'whole_digits': 1}
+
+    assert plain.validate_python('1.23') == Decimal('1.23')
+    assert after.validate_python('1.23') == Decimal('1.23')
+
+    split = TypeAdapter(Annotated[Decimal, AfterValidator(lambda v: v), Field(max_digits=3), Field(decimal_places=2)])
+    with pytest.raises(ValidationError) as exc_split:
+        split.validate_python('12.3')
+    assert exc_split.value.errors()[0]['type'] == 'decimal_whole_digits'

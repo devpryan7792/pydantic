@@ -264,9 +264,44 @@ def apply_known_metadata(annotation: Any, schema: CoreSchema) -> CoreSchema | No
             else:
                 js_constraint_key = constraint
 
-            schema = cs.no_info_after_validator_function(
-                partial(NUMERIC_VALIDATOR_LOOKUP[constraint], **{constraint: value}), schema
-            )
+            if constraint == 'decimal_places':
+                max_digits = schema_update.get('max_digits')
+                if max_digits is None:
+                    inner = schema
+                    while inner.get('type') in {'function-before', 'function-wrap', 'function-after'}:
+                        if (meta := inner.get('metadata')) and (js_up := meta.get('pydantic_js_updates')):
+                            if 'max_digits' in js_up:
+                                max_digits = js_up['max_digits']
+                                break
+                        inner = inner.get('schema', {})
+                    if max_digits is None and inner.get('type') == 'decimal':
+                        max_digits = inner.get('max_digits')
+
+                schema = cs.no_info_after_validator_function(
+                    partial(NUMERIC_VALIDATOR_LOOKUP[constraint], decimal_places=value, max_digits=max_digits),
+                    schema,
+                )
+            elif constraint == 'max_digits':
+                decimal_places = schema_update.get('decimal_places')
+                if decimal_places is None:
+                    inner = schema
+                    while inner.get('type') in {'function-before', 'function-wrap', 'function-after'}:
+                        if (meta := inner.get('metadata')) and (js_up := meta.get('pydantic_js_updates')):
+                            if 'decimal_places' in js_up:
+                                decimal_places = js_up['decimal_places']
+                                break
+                        inner = inner.get('schema', {})
+                    if decimal_places is None and inner.get('type') == 'decimal':
+                        decimal_places = inner.get('decimal_places')
+
+                schema = cs.no_info_after_validator_function(
+                    partial(NUMERIC_VALIDATOR_LOOKUP[constraint], max_digits=value, decimal_places=decimal_places),
+                    schema,
+                )
+            else:
+                schema = cs.no_info_after_validator_function(
+                    partial(NUMERIC_VALIDATOR_LOOKUP[constraint], **{constraint: value}), schema
+                )
             metadata = schema.get('metadata', {})
             if (existing_json_schema_updates := metadata.get('pydantic_js_updates')) is not None:
                 metadata['pydantic_js_updates'] = {
